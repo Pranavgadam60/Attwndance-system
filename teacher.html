@@ -1,0 +1,152 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="panel glass animated-fade-in">
+    <h3 class="panel-title">Teacher Dashboard - Generate Attendance Code</h3>
+    
+    <div style="max-width: 500px; margin: 0 auto; text-align: center;">
+        <select id="subject-select" class="form-group" style="margin-bottom: 1.5rem;">
+            <option value="" disabled selected>Select Subject for Today's Class</option>
+            {% for s in subjects %}
+                <option value="{{ s.id }}">{{ s.code }} - {{ s.name }}</option>
+            {% endfor %}
+        </select>
+        <button id="generate-btn" class="btn btn-primary btn-block">Generate Code</button>
+    </div>
+
+    <!-- Active Session Display -->
+    <div id="active-session-zone" style="display: none; margin-top: 3rem; text-align: center;">
+        <h4>Share this code with students</h4>
+        <div id="live-code" class="live-code-display">---</div>
+        <div id="countdown" class="countdown">02:00</div>
+        
+        <h4 style="margin-top: 3rem; text-align: left;">Live Attendance <span id="student-count">0</span></h4>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Roll Num</th>
+                        <th>Name</th>
+                        <th>Time Marked</th>
+                    </tr>
+                </thead>
+                <tbody id="attendance-list">
+                    <!-- Loaded via JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="panel glass animated-fade-in" style="animation-delay: 0.3s; margin-top: 2rem;">
+    <h3 class="panel-title">Manual Attendance</h3>
+    <form method="POST" action="{{ url_for('manual_attendance') }}">
+        <div class="grid-3" style="display: flex; gap:1rem; align-items: flex-end;">
+            <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                <label style="display: block; margin-bottom: 0.5rem; text-align: left; opacity: 0.8; font-size: 0.9rem;">Select Session</label>
+                <select name="session_id" required>
+                    <option value="" disabled selected>Select a recent session</option>
+                    {% for sess in recent_sessions %}
+                        <option value="{{ sess.id }}">{{ sess.name }} - {{ sess.created_at[:10] }} (HR: {{ sess.created_at[11:16] }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="flex: 2; margin-bottom: 0;">
+                <label style="display: block; margin-bottom: 0.5rem; text-align: left; opacity: 0.8; font-size: 0.9rem;">Select Student</label>
+                <input type="text" name="student_id" list="student-list" placeholder="Type roll number or name..." required autocomplete="off">
+                <datalist id="student-list">
+                    {% for stu in students %}
+                        <option value="{{ stu.id }}">{{ stu.roll_number }} - {{ stu.name }}</option>
+                    {% endfor %}
+                </datalist>
+            </div>
+            <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                <button type="submit" class="btn btn-outline" style="width: 100%;">Mark Present</button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let intervalId;
+    let pollIntervalId;
+    let currentSessionId = null;
+
+    document.getElementById('generate-btn').addEventListener('click', async () => {
+        const subjectId = document.getElementById('subject-select').value;
+        if (!subjectId) {
+            alert('Please select a subject');
+            return;
+        }
+
+        const res = await fetch('{{ url_for("generate_code") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({subject_id: subjectId})
+        });
+
+        const data = await res.json();
+        if (data.error) {
+            alert(data.error);
+            return;
+        }
+
+        document.getElementById('live-code').innerText = data.code;
+        document.getElementById('active-session-zone').style.display = 'block';
+        currentSessionId = data.session_id;
+
+        startCountdown(data.expires_at);
+        startPolling();
+    });
+
+    function startCountdown(expiresAtStr) {
+        clearInterval(intervalId);
+        const expiresAt = new Date(expiresAtStr).getTime();
+        
+        intervalId = setInterval(() => {
+            const now = new Date().getTime();
+            const distance = expiresAt - now;
+
+            if (distance < 0) {
+                clearInterval(intervalId);
+                clearInterval(pollIntervalId);
+                document.getElementById('countdown').innerText = "EXPIRED";
+                document.getElementById('live-code').style.color = "var(--danger-color)";
+                return;
+            }
+
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+            document.getElementById('countdown').innerText = 
+                (minutes < 10 ? "0" : "") + minutes + ":" + 
+                (seconds < 10 ? "0" : "") + seconds;
+        }, 1000);
+    }
+
+    function startPolling() {
+        clearInterval(pollIntervalId);
+        pollIntervalId = setInterval(async () => {
+            if (!currentSessionId) return;
+            const res = await fetch(`/teacher/session_attendance/${currentSessionId}`);
+            const list = await res.json();
+            
+            const tbody = document.getElementById('attendance-list');
+            tbody.innerHTML = '';
+            document.getElementById('student-count').innerText = list.length;
+            
+            list.forEach(student => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${student.roll_number}</td>
+                    <td>${student.name}</td>
+                    <td>${student.timestamp.split(' ')[1]}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }, 3000);
+    }
+</script>
+{% endblock %}

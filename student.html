@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="grid-2">
+    <!-- Submit Attendance -->
+    <div class="panel glass animated-fade-in">
+        <h3 class="panel-title">Mark Attendance</h3>
+        <p style="color:var(--text-secondary); margin-bottom: 1.5rem;">Enter the 6-digit code provided by your teacher before it expires.</p>
+        
+        <form id="attendance-form" style="display:flex; flex-direction:column; gap:1rem;">
+            <input type="text" id="attendance-code" placeholder="Enter 6-digit Code" maxlength="6" style="text-align: center; font-size: 2rem; letter-spacing: 0.5rem;" required>
+            <button type="submit" class="btn btn-primary">Submit Attendance</button>
+        </form>
+
+        <div id="mark-result" style="margin-top: 1rem; text-align: center; font-weight: bold;"></div>
+    </div>
+    
+    <!-- Smart Overview -->
+    <div class="panel glass animated-fade-in" style="animation-delay: 0.1s;">
+        <h3 class="panel-title">Overall Status</h3>
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+            <div style="position: relative; width: 150px; height: 150px; margin-bottom: 2rem;">
+                <canvas id="overallChart"></canvas>
+                <div id="overall-percentage" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 1.5rem; font-weight: bold;">0%</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Analytics -->
+<div class="panel glass animated-fade-in" style="animation-delay: 0.2s;">
+    <h3 class="panel-title">Subject-wise Analytics</h3>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Subject</th>
+                    <th>Attended / Total</th>
+                    <th>Percentage</th>
+                    <th>Smart Suggestion</th>
+                </tr>
+            </thead>
+            <tbody id="analytics-table">
+                <tr><td colspan="4" style="text-align: center;">Loading analytics...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div style="margin-top: 2rem;">
+        <canvas id="subjectChart" height="100"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.getElementById('attendance-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const code = document.getElementById('attendance-code').value;
+        const resultDiv = document.getElementById('mark-result');
+        
+        const res = await fetch('{{ url_for("mark_attendance") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({code: code})
+        });
+
+        const data = await res.json();
+        if (data.error) {
+            resultDiv.innerText = data.error;
+            resultDiv.className = 'status-red';
+        } else {
+            resultDiv.innerText = data.message;
+            resultDiv.className = 'status-green';
+            document.getElementById('attendance-code').value = '';
+            // Refresh analytics
+            loadAnalytics();
+        }
+    });
+
+    async function loadAnalytics() {
+        const res = await fetch('{{ url_for("student_analytics") }}');
+        const data = await res.json();
+
+        // 1. Update Overall Status Chart
+        const overallCanvas = document.getElementById('overallChart').getContext('2d');
+        const overall = data.overall_percentage;
+        let color = '#ef4444'; // Red
+        if (overall >= 75) color = '#10b981'; // Green
+        else if (overall >= 60) color = '#f59e0b'; // Yellow
+        
+        document.getElementById('overall-percentage').innerText = overall + '%';
+        document.getElementById('overall-percentage').style.color = color;
+
+        if (window.pieChart) window.pieChart.destroy();
+        window.pieChart = new Chart(overallCanvas, {
+            type: 'doughnut',
+            data: {
+                labels: ['Attended', 'Missed'],
+                datasets: [{
+                    data: [overall, 100 - overall],
+                    backgroundColor: [color, 'rgba(255,255,255,0.1)'],
+                    borderWidth: 0
+                }]
+            },
+            options: { cutout: '80%', plugins: { legend: {display: false} } }
+        });
+
+        // 2. Update Table
+        const tbody = document.getElementById('analytics-table');
+        tbody.innerHTML = '';
+        
+        const labels = [];
+        const chartData = [];
+        const bgColors = [];
+
+        data.subjects.forEach(sub => {
+            labels.push(sub.subject);
+            chartData.push(sub.percentage);
+            
+            let statColor = 'status-red';
+            let bgC = 'rgba(239, 68, 68, 0.7)';
+            if (sub.percentage >= 75) { statColor = 'status-green'; bgC = 'rgba(16, 185, 129, 0.7)'; }
+            else if (sub.percentage >= 60) { statColor = 'status-yellow'; bgC = 'rgba(245, 158, 11, 0.7)'; }
+            bgColors.push(bgC);
+
+            let suggestion = "Safe zone.";
+            if (sub.percentage < 75) {
+                suggestion = `Attend next <b>${sub.required_for_75}</b> lectures to reach 75%`;
+            } else if (sub.total === 0) {
+                suggestion = "No classes yet.";
+            }
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${sub.subject}</td>
+                <td>${sub.attended} / ${sub.total}</td>
+                <td class="${statColor}">${sub.percentage}%</td>
+                <td style="color:var(--text-secondary);">${suggestion}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+
+        if (data.subjects.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No subject data available.</td></tr>';
+        }
+
+        // 3. Update Bar Chart
+        const subjectCanvas = document.getElementById('subjectChart').getContext('2d');
+        if (window.barChart) window.barChart.destroy();
+        window.barChart = new Chart(subjectCanvas, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Attendance %',
+                    data: chartData,
+                    backgroundColor: bgColors,
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                scales: {
+                    y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    x: { grid: { display: false } }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    // Load analytics on page load
+    loadAnalytics();
+</script>
+{% endblock %}

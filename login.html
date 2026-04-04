@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="home-layout">
+    <!-- Hero Section matching the image -->
+    <div class="hero-top-text">PRECISION &bull; ANALYTICS &bull; EXCELLENCE</div>
+    <h1 class="hero-title">Smart Attendance &<br>Student Monitoring<br>Platform</h1>
+    <div class="floating-logo-container">
+        <div class="samas-circle">
+            <div class="samas-logo-main">SAMAS</div>
+            <div class="samas-logo-sub">SMART MONITORING</div>
+        </div>
+    </div>
+
+    <!-- Login Form Area -->
+    <div class="auth-wrapper" style="min-height: auto; width: 100%; margin-top: 2rem;">
+        <div class="auth-card glass animated-fade-in" style="margin: 0 auto;">
+            <h2 class="auth-title">Welcome Back</h2>
+            <p class="auth-subtitle">Sign in to your account</p>
+        
+        <form method="POST" action="{{ url_for('login') }}" class="auth-form">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required placeholder="Enter username">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required placeholder="Enter password">
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+    </div>
+</div>
+</div>
+{% endblock %}
