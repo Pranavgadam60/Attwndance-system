@@ -326,13 +326,21 @@ def mark_attendance():
         return jsonify({'error': 'Code is required'}), 400
 
     conn = get_db_connection()
-    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Find active session with this code
-    session_record = conn.execute("""
-        SELECT * FROM attendance_sessions 
-        WHERE secret_code = ? AND expires_at > ?
-    """, (code, now_str)).fetchone()
+   session_record = conn.execute("""
+    SELECT * FROM attendance_sessions 
+    WHERE secret_code = ?
+""", (code,)).fetchone()
+
+if not session_record:
+    conn.close()
+    return jsonify({'error': 'Invalid code'}), 400
+
+# Convert expiry time
+expires_at = datetime.strptime(session_record['expires_at'], '%Y-%m-%d %H:%M:%S')
+
+if datetime.now() > expires_at:
+    conn.close()
+    return jsonify({'error': 'Code expired'}), 400
     
     if not session_record:
         conn.close()
